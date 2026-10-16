@@ -1,0 +1,16 @@
+langgraph
+python-dotenv
+langchain-groq
+langchain-huggingface
+fastapi
+uvicorn
+langgraph-checkpoint-sqlite
+langchain-tavily
+pypdf
+langchain-text-splitters
+langchain-community
+langchain-openrouter
+langchain-chroma
+docx2txt
+aiosqlite
+sqlalchemy
