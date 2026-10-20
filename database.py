@@ -26,7 +26,7 @@ DATABASE_URL = "sqlite:///data/chatbot_memory.db"
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 10},
 )
 
 SessionLocal = sessionmaker(
