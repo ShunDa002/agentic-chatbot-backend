@@ -14,3 +14,5 @@ langchain-chroma
 docx2txt
 aiosqlite
 sqlalchemy
+python-multipart
+langchain-openai

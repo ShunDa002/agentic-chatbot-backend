@@ -13,6 +13,8 @@ from langchain_core.messages import AIMessageChunk, ToolMessage
 from collections.abc import Iterator
 from agent import get_agent
 from database import create_or_update_conversation, save_chat_message
+from tools import reset_current_thread_id, set_current_thread_id
+from tools import reset_current_thread_id, set_current_thread_id
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +40,6 @@ class ActiveRun:
 
 _active_runs: dict[str, ActiveRun] = {}
 _active_runs_lock = asyncio.Lock()
-STREAM_END = object()
 
 
 @dataclass(frozen=True)
@@ -428,6 +429,7 @@ async def produce_chat_events(
     tool_calls_by_key: dict[str, dict[str, Any]] = {}
     interrupt_id: str | None = None
     stream_started = False
+    thread_context_token = None
 
     try:
         await queue.put(
@@ -448,6 +450,7 @@ async def produce_chat_events(
             model,
         )
 
+        thread_context_token = set_current_thread_id(thread_id)
         agent = await get_agent(model_name=model)
 
         if operation == "invoke":
@@ -707,6 +710,8 @@ async def produce_chat_events(
         )
 
     finally:
+        if thread_context_token is not None:
+            reset_current_thread_id(thread_context_token)
         await queue.put(STREAM_END)
 
         async with _active_runs_lock:

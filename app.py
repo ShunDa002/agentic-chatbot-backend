@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Any
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, UploadFile
 import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -14,8 +14,11 @@ import uuid
 from pathlib import Path
 from agent import get_models
 from database import init_db, list_conversations, get_chat_history
+from rag import add_document_to_rag
 import asyncio
 import logging
+import hashlib
+import os
 
 
 class ChatRequest(BaseModel):
@@ -144,6 +147,49 @@ def thread_id():
 @app.post("/models", tags=["models"], summary="Get list of available models")
 def models():
     return get_models()
+
+
+ALLOWED_UPLOAD_SUFFIXES = {".pdf", ".docx", ".txt", ".md", ".py", ".csv"}
+MAX_UPLOAD_BYTES = 3 * 1024 * 1024  # 3 MiB
+
+
+@app.post("/rag/upload", tags=["rag"], summary="Upload a document for RAG")
+async def upload_rag_document(
+    thread_id: str = Form(min_length=1, max_length=64),
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    original_name = Path(file.filename or "upload").name
+    suffix = Path(original_name).suffix.lower()
+    if suffix not in ALLOWED_UPLOAD_SUFFIXES:
+        raise HTTPException(status_code=415, detail="Unsupported file type.")
+
+    file_bytes = await file.read(MAX_UPLOAD_BYTES + 1)
+    await file.close()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="The uploaded file exceeds 25 MiB.")
+
+    content_sha256 = hashlib.sha256(file_bytes).hexdigest()
+    content_path = Path("uploads") / f"{content_sha256}{suffix}"
+    if not content_path.exists():
+        temporary_path = content_path.with_suffix(
+            content_path.suffix + f".{uuid.uuid4().hex}.tmp"
+        )
+        temporary_path.write_bytes(file_bytes)
+        os.replace(temporary_path, content_path)
+
+    try:
+        return await asyncio.to_thread(
+            add_document_to_rag, str(content_path), thread_id, original_name
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("RAG ingestion failed for %s", original_name)
+        raise HTTPException(
+            status_code=500, detail="Document ingestion failed."
+        ) from exc
 
 
 @app.post(

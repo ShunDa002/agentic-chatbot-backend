@@ -1,26 +1,35 @@
 from dotenv import load_dotenv
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
-import requests
-import math
+import requests, math, os
+from contextvars import ContextVar
 from database import save_memory, search_memory
 from rag import retrieve_from_rag
 
 load_dotenv()
-
-CURRENT_THREAD_ID = "default"
+CURRENT_THREAD_ID: ContextVar[str | None] = ContextVar(
+    "current_thread_id", default=None
+)
 
 
 def set_current_thread_id(thread_id: str):
-    global CURRENT_THREAD_ID
-    CURRENT_THREAD_ID = thread_id
+    if not thread_id or not thread_id.strip():
+        raise ValueError("thread_id must be non-empty")
+    return CURRENT_THREAD_ID.set(thread_id.strip())
 
 
-web_search = TavilySearch(
-    max_results=3,
-    topic="general",
-    search_depth="advanced",
-)
+def reset_current_thread_id(token):
+    CURRENT_THREAD_ID.reset(token)
+
+
+def _require_thread_id() -> str:
+    value = CURRENT_THREAD_ID.get()
+    if not value:
+        raise RuntimeError("No conversation thread is active for this tool call.")
+    return value
+
+
+web_search = TavilySearch(max_results=3, topic="general", search_depth="advanced")
 
 
 @tool
@@ -29,63 +38,52 @@ def get_stock_price(symbol: str) -> dict:
     Fetch latest stock price for a given symbol (e.g. 'AAPL', 'TSLA')
     using Alpha Vantage with API key in the URL.
     """
-    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=HTM6MLWOXVJCK77J"
-    r = requests.get(url)
-    return r.json()
+    try:
+        url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey=HTM6MLWOXVJCK77J"
+        r = requests.get(url)
+        return r.json()
+    except requests.RequestException as exc:
+        return {"error": "Stock service unavailable.", "details": str(exc)}
 
 
 @tool
 def calculator(expression: str) -> str:
-    """
-    Useful for simple math calculations.
-    Input should be a valid math expression.
-    Example: 2 + 2, math.sqrt(16), 10 * 5
-    """
-
+    """Evaluate a simple arithmetic expression."""
     try:
-        allowed = {
-            "math": math,
-            "abs": abs,
-            "round": round,
-            "min": min,
-            "max": max,
-            "sum": sum,
-        }
-
-        result = eval(expression, {"__builtins__": {}}, allowed)
-        return str(result)
-
-    except Exception as e:
-        return f"Calculation error: {str(e)}"
+        return str(
+            eval(
+                expression,
+                {"__builtins__": {}},
+                {
+                    "math": math,
+                    "abs": abs,
+                    "round": round,
+                    "min": min,
+                    "max": max,
+                    "sum": sum,
+                },
+            )
+        )
+    except Exception as exc:
+        return f"Calculation error: {exc}"
 
 
 @tool
 def search_uploaded_documents(query: str) -> str:
-    """
-    Search uploaded documents for relevant information.
-    Use this when the user asks about uploaded PDFs, DOCX, TXT, notes, files, or documents.
-    """
-
-    return retrieve_from_rag(query=query, thread_id=CURRENT_THREAD_ID)
+    """Search files uploaded in the active thread. Prefer this over web search when files exist."""
+    return retrieve_from_rag(query=query, thread_id=_require_thread_id())
 
 
 @tool
 def remember_this(memory: str) -> str:
-    """
-    Save an important user preference or fact into long-term memory.
-    Use this when the user asks you to remember something.
-    """
-
-    return save_memory(thread_id=CURRENT_THREAD_ID, memory=memory)
+    """Save an explicitly requested memory."""
+    return save_memory(thread_id=_require_thread_id(), memory=memory)
 
 
 @tool
 def recall_memory(query: str) -> str:
-    """
-    Recall saved long-term memories about the user or this conversation.
-    """
-
-    return search_memory(thread_id=CURRENT_THREAD_ID, query=query)
+    """Recall saved long-term memories."""
+    return search_memory(thread_id=_require_thread_id(), query=query)
 
 
 tools = [
