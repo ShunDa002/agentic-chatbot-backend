@@ -14,7 +14,6 @@ from collections.abc import Iterator
 from agent import get_agent
 from database import create_or_update_conversation, save_chat_message
 from tools import reset_current_thread_id, set_current_thread_id
-from tools import reset_current_thread_id, set_current_thread_id
 
 logging.basicConfig(
     level=logging.INFO,

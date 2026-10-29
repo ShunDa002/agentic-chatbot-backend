@@ -1,8 +1,9 @@
 from dotenv import load_dotenv
 from langchain_core.tools import tool
 from langchain_tavily import TavilySearch
-import requests, math, os
+import requests, math
 from contextvars import ContextVar
+from langgraph.types import interrupt
 from database import save_memory, search_memory
 from rag import retrieve_from_rag
 
@@ -44,6 +45,33 @@ def get_stock_price(symbol: str) -> dict:
         return r.json()
     except requests.RequestException as exc:
         return {"error": "Stock service unavailable.", "details": str(exc)}
+
+
+@tool
+def purchase_stock(symbol: str, quantity: int) -> dict:
+    """
+    Simulate purchasing a given quantity of a stock symbol.
+
+    HUMAN-IN-THE-LOOP:
+    Before confirming the purchase, this tool will interrupt
+    and wait for a human decision ("yes" / anything else).
+    """
+    decision = interrupt(f"Approve buying {quantity} shares of {symbol}? (yes/no)")
+
+    if isinstance(decision, str) and decision.lower() == "yes":
+        return {
+            "status": "success",
+            "message": f"Purchased {quantity} shares of {symbol} was placed.",
+            "symbol": symbol,
+            "quantity": quantity,
+        }
+    else:
+        return {
+            "status": "cancelled",
+            "message": f"Purchase of {quantity} shares of {symbol} was declined by human.",
+            "symbol": symbol,
+            "quantity": quantity,
+        }
 
 
 @tool
@@ -89,6 +117,7 @@ def recall_memory(query: str) -> str:
 tools = [
     web_search,
     get_stock_price,
+    purchase_stock,
     calculator,
     search_uploaded_documents,
     remember_this,

@@ -18,9 +18,9 @@ Path("data").mkdir(exist_ok=True)
 DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "free-model")
 GROQ_MODELS = {"gpt-oss-20b": "openai/gpt-oss-20b", "qwen3.8-27b": "qwen/qwen3.8-27b"}
 OPENROUTER_MODELS = {
+    "free-model": "openrouter/free",
     "nemotron-3.5-lightning": "nvidia/nemotron-3.5-lightning:free",
     "gemma-4-31b-it": "google/gemma-4-31b-it:free",
-    "free-model": "openrouter/free",
 }
 Provider = Literal["groq", "openrouter"]
 
@@ -123,4 +123,4 @@ async def close_agents():
 
 
 def get_models():
-    return list(GROQ_MODELS) + list(OPENROUTER_MODELS)
+    return list(OPENROUTER_MODELS) + list(GROQ_MODELS)
